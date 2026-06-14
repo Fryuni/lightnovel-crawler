@@ -40,7 +40,7 @@ _PYLSP_SETTINGS = {
             "select": ["I", "E", "W", "F"],
             "ignore": ["E203", "E265", "E501"],
             "lineLength": 100,
-            "targetVersion": "py39",
+            "targetVersion": "py311",
         },
         "pyflakes": {
             "enabled": False,

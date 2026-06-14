@@ -18,8 +18,6 @@ classifiers = [
   "Framework :: FastAPI",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -38,7 +36,7 @@ dependencies = [
   "humanize>=4.0.0",
   "lncrawl-scraper[all]==0.1.2",
   "lxml>=5.4.0,<7.0.0",
-  "nodriver>=0.50",
+  "browser-use>=0.13,<0.14",
   "openai>=1.0.0",
   "passlib[argon2]>=1.7.0",
   "pillow>=10.0.0",
@@ -70,7 +68,7 @@ keywords = ["lightnovel", "webnovel", "crawler", "scraper", "downloader", "novel
 license = "GPL-3.0-or-later"
 name = "lightnovel-crawler"
 readme = "README.rst"
-requires-python = ">=3.9.0"
+requires-python = ">=3.11.0"
 
 [project.optional-dependencies]
 dev = [
@@ -145,7 +143,7 @@ extend-exclude = [
 ]
 indent-width = 4
 line-length = 100
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.format]
 docstring-code-format = true

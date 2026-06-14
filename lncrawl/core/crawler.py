@@ -72,6 +72,10 @@ class Crawler(ABC):
             config.proxy.tor_control_port = ctx.config.crawler.tor_control_port
             config.proxy.tor_control_password = ctx.config.crawler.tor_control_password
         self.scraper = Scraper(origin=origin, parser=parser, config=config)
+        if ctx.config.crawler.can_use_browser and not self.has_manga:
+            from .browser_scraper import BrowserUseScraper
+
+            self.scraper = BrowserUseScraper(self.scraper)
 
     def close(self) -> None:
         self.scraper.close()

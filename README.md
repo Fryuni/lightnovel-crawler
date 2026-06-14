@@ -63,7 +63,7 @@ chmod +x lncrawl
 
 ### 📦 pip
 
-Requires Python 3.9+.
+Requires Python 3.11+.
 
 ```bash
 pip install -U lightnovel-crawler

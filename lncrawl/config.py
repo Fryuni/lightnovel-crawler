@@ -508,17 +508,18 @@ class CrawlerConfig(_Section):
         self._set("use_headless_mode", v)
 
     @property
-    def selenium_grid(self) -> str:
-        """Selenium Grid URL.
+    def browser_use_api_key(self) -> Annotated[str, Sensitive]:
+        """BrowserUse API Key.
 
-        Address of your Selenium Grid or remote browser hub, if you run browsers on another machine.
-        You can set this here or leave it blank and define it in the environment instead.
+        API key for BrowserUse Cloud browser sessions. Set this to use BrowserUse remote browsers;
+        leave it blank to use BrowserUse local browser mode. The `BROWSER_USE_API_KEY` environment
+        variable is also honored by the BrowserUse session factory without persisting it to config.
         """
-        return self._get("selenium_grid", os.getenv("SELENIUM_GRID", ""))
+        return self._get("browser_use_api_key", "")
 
-    @selenium_grid.setter
-    def selenium_grid(self, url: str) -> None:
-        self._set("selenium_grid", url)
+    @browser_use_api_key.setter
+    def browser_use_api_key(self, v: str) -> None:
+        self._set("browser_use_api_key", v)
 
     @property
     def index_file_download_url(self) -> str:

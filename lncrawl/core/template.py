@@ -126,9 +126,13 @@ class BrowserTemplate(CrawlerTemplate):
                     raise
                 raise RuntimeError("Browser is disabled in the configuration")
 
-            ctx.logger.info(
-                f"Initializing browser. Headless={ctx.config.crawler.use_headless_mode}"
-            )
+            browser_use_api_key = ctx.config.crawler.browser_use_api_key.strip()
+            if browser_use_api_key:
+                ctx.logger.info("Initializing BrowserUse browser. Mode=remote")
+            else:
+                ctx.logger.info(
+                    f"Initializing BrowserUse browser. Mode=local Headless={ctx.config.crawler.use_headless_mode}"
+                )
             browser = Browser(
                 headless=ctx.config.crawler.use_headless_mode,
             )

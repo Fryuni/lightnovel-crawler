@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **BrowserUse browser backend** — text crawlers now drive BrowserUse browsers, using BrowserUse Cloud when `crawler.browser_use_api_key` / `BROWSER_USE_API_KEY` is set and BrowserUse local mode otherwise.
 - **Job notifications** — `JobNotificationService` dispatches email on job state changes (pending → running → success/failure) via a background `TaskManager`; triggered from handler helpers (`_set_running`, `_set_success`, etc.)
 - **Docker healthcheck** — server container now exposes a `/health` probe
 
 ### Changed
 
+- **Browser runtime baseline** — browser automation now depends on BrowserUse and Python 3.11+, replacing the previous nodriver backend.
 - **Job runner refactored into typed handlers** — `JobRunner` now dispatches via a `_HANDLER_REGISTRY` of `BaseHandler`/`BatchHandler` subclasses; each job type has its own module under `scheduler/handlers/`
 - **Web app synced before Docker build** — `lncrawl-web` artifacts are pulled in as part of the Docker build step
 - **`crawler_version` stamped on novel/chapter updates** — upserts now use a merge strategy to preserve existing data
