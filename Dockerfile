@@ -21,6 +21,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Runtime
 #------------------------------------------------
 FROM ${BASE_IMAGE}
+RUN apt-get update -yq && \
+    apt-get install -yq --no-install-recommends \
+    chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 
