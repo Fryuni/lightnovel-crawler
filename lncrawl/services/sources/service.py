@@ -158,16 +158,26 @@ class Sources:
             self.add_crawler(crawler)
 
     def add_crawler(self, crawler: Type[Crawler]):
-        # add to index if not available
+        # Keep repository metadata from the index, but always trust the imported
+        # crawler class for fields derived from source code. A deployed crawler
+        # can be newer than the synced remote index.
         name = crawler.__name__
         cid = getattr(crawler, "__id__")  # crawler id
+        current = create_crawler_info(crawler)
         if cid in self._index.crawlers:
             info = self._index.crawlers[cid]
+            info.file_path = current.file_path
+            info.md5 = current.md5
+            info.base_urls = current.base_urls
+            info.language = current.language
+            info.has_manga = current.has_manga
+            info.can_login = current.can_login
+            info.can_search = current.can_search
+            info.has_mtl = current.has_mtl
         else:
             logger.info(f"Found non-indexed crawler: {name}")
-            info = create_crawler_info(crawler)
+            info = current
             self._index.crawlers[cid] = info
-
         # skip this crawler if it is not the latest
         if cid in self.info and info.version < self.info[cid].version:
             return
