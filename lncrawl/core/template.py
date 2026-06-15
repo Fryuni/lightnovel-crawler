@@ -36,6 +36,11 @@ class BrowserTemplate(CrawlerTemplate):
     # ------------------------------------------------------------------------- #
 
     def _override_scraper_get_soup(self) -> None:
+        from .browser_scraper import BrowserUseScraper
+
+        if isinstance(self.scraper, BrowserUseScraper):
+            return
+
         from .browser import By
 
         origin_method = self.scraper.get_soup
@@ -73,6 +78,11 @@ class BrowserTemplate(CrawlerTemplate):
         setattr(self.scraper, "get_image", get_image)
 
     def _override_scraper_get_json(self) -> None:
+        from .browser_scraper import BrowserUseScraper
+
+        if isinstance(self.scraper, BrowserUseScraper):
+            return
+
         origin_method = self.scraper.get_json
 
         def get_json(url: str, headers: MutableMapping = {}, **kwargs):
@@ -120,6 +130,7 @@ class BrowserTemplate(CrawlerTemplate):
         from .browser import Browser
 
         browser: Optional[Browser] = None
+        reusable = True
         try:
             if not ctx.config.crawler.can_use_browser:
                 if ctx.logger.has_exception:
@@ -140,8 +151,8 @@ class BrowserTemplate(CrawlerTemplate):
             _close = browser.close
             _visit = browser.visit
 
-            def override_close() -> None:
-                _close()
+            def override_close(reusable: bool = True) -> None:
+                _close(reusable=reusable)
 
             def override_visit(url: str) -> None:
                 _visit(url)
@@ -152,9 +163,12 @@ class BrowserTemplate(CrawlerTemplate):
             setattr(browser, "visit", override_visit)
 
             yield browser
+        except Exception:
+            reusable = False
+            raise
         finally:
             if browser:
-                browser.close()
+                browser.close(reusable=reusable)
 
 
 # ----------------------------------------------------------------------------- #

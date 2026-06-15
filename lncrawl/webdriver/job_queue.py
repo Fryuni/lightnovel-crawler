@@ -1,10 +1,12 @@
 import atexit
+from dataclasses import dataclass
 import inspect
 import json
 import logging
 import os
 from threading import Condition
-from typing import List, Optional
+import time
+from typing import Callable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -15,14 +17,31 @@ logger = logging.getLogger(__name__)
 BROWSER_USE_CONCURRENCY_ENV = "BROWSER_USE_CONCURRENCY"
 BROWSER_USE_BILLING_URL = "https://api.browser-use.com/api/v2/billing/account"
 FALLBACK_BROWSER_USE_CONCURRENCY = 3
+BROWSER_USE_SESSION_TTL_SECONDS = 10 * 60
 
 __condition = Condition()
-__open_browsers: List[object] = []
+__records: List["BrowserRecord"] = []
 __active_slots = 0
 __queue_limit: Optional[int] = None
 __cloud_limit_key: Optional[str] = None
 __cloud_limit: Optional[int] = None
 __cloud_limit_checked = False
+
+
+@dataclass(frozen=True)
+class BrowserPoolKey:
+    api_key: str
+    user_data_dir: str
+    headless: bool
+    extra_args: Tuple[str, ...]
+
+
+@dataclass
+class BrowserRecord:
+    browser: object
+    key: BrowserPoolKey
+    created_at: float
+    in_use: bool
 
 
 def _positive_int(value: object, source: str) -> Optional[int]:
@@ -115,7 +134,43 @@ def resolve_browser_use_concurrency(api_key: Optional[str] = None) -> int:
     return FALLBACK_BROWSER_USE_CONCURRENCY
 
 
-def acquire_queue(api_key: Optional[str] = None) -> None:
+def _stop_browser(browser: object, timeout: Optional[float] = None) -> None:
+    try:
+        result = getattr(browser, "stop")()
+        if inspect.isawaitable(result):
+            run_async(result, timeout=timeout)
+    except Exception:
+        logger.exception("Failed to stop browser instance")
+
+
+def _find_record(browser: object) -> Optional[BrowserRecord]:
+    for record in __records:
+        if record.browser is browser:
+            return record
+    return None
+
+
+def _evict_expired_idle_locked() -> List[BrowserRecord]:
+    global __records, __active_slots
+
+    now = time.monotonic()
+    expired: List[BrowserRecord] = []
+    kept: List[BrowserRecord] = []
+    for record in __records:
+        if not record.in_use and now - record.created_at >= BROWSER_USE_SESSION_TTL_SECONDS:
+            expired.append(record)
+        else:
+            kept.append(record)
+    __records = kept
+    __active_slots -= len(expired)
+    return expired
+
+
+def acquire_browser(
+    key: BrowserPoolKey,
+    create_browser: Callable[[], object],
+    api_key: Optional[str] = None,
+) -> object:
     global __active_slots, __queue_limit
 
     limit = resolve_browser_use_concurrency(api_key)
@@ -125,67 +180,89 @@ def acquire_queue(api_key: Optional[str] = None) -> None:
             __queue_limit = limit
             __condition.notify_all()
 
-        while __queue_limit is not None and __active_slots >= __queue_limit:
+        while True:
+            expired = _evict_expired_idle_locked()
+            now = time.monotonic()
+            for record in __records:
+                if (
+                    not record.in_use
+                    and record.key == key
+                    and now - record.created_at < BROWSER_USE_SESSION_TTL_SECONDS
+                ):
+                    record.in_use = True
+                    return record.browser
+
+            if __queue_limit is None or __active_slots < __queue_limit:
+                __active_slots += 1
+                break
+
             __condition.wait()
 
-        __active_slots += 1
+    for record in expired:
+        _stop_browser(record.browser, timeout=10)
 
-
-def _find_browser_index(browser: object) -> Optional[int]:
-    for index, open_browser in enumerate(__open_browsers):
-        if open_browser is browser:
-            return index
-    return None
-
-
-def _release_queue_slot() -> None:
-    global __active_slots
+    try:
+        browser = create_browser()
+    except Exception:
+        with __condition:
+            __active_slots -= 1
+            __condition.notify_all()
+        raise
 
     with __condition:
-        if __active_slots <= 0:
-            logger.warning("BrowserUse queue slot released while none were active")
+        __records.append(
+            BrowserRecord(
+                browser=browser,
+                key=key,
+                created_at=time.monotonic(),
+                in_use=True,
+            )
+        )
+        return browser
+
+
+def release_browser(
+    browser: object,
+    *,
+    reusable: bool = True,
+    timeout: Optional[float] = None,
+) -> None:
+    global __records, __active_slots
+
+    with __condition:
+        record = _find_record(browser)
+        if record is None:
             return
 
+        age = time.monotonic() - record.created_at
+        if reusable and age < BROWSER_USE_SESSION_TTL_SECONDS:
+            record.in_use = False
+            __condition.notify_all()
+            return
+
+        __records = [r for r in __records if r is not record]
         __active_slots -= 1
-        __condition.notify()
+        __condition.notify_all()
 
-
-def register_browser(browser: object) -> None:
-    with __condition:
-        if _find_browser_index(browser) is None:
-            __open_browsers.append(browser)
-
-
-def release_browser(browser: object) -> None:
-    with __condition:
-        index = _find_browser_index(browser)
-        if index is None:
-            return
-
-        __open_browsers.pop(index)
-
-    _release_queue_slot()
-    logger.info("Destroyed browser instance")
+    _stop_browser(record.browser, timeout=timeout)
 
 
 def check_active(browser: Optional[object]) -> bool:
     with __condition:
-        return browser is not None and _find_browser_index(browser) is not None
+        return browser is not None and _find_record(browser) is not None
 
 
 def cleanup_drivers() -> None:
-    with __condition:
-        browsers = list(__open_browsers)
+    global __records, __active_slots
 
-    for browser in browsers:
-        try:
-            result = getattr(browser, "stop")()
-            if inspect.isawaitable(result):
-                run_async(result, timeout=10)  # type: ignore[arg-type]
-        except Exception:
-            logger.exception("Failed to stop browser during cleanup")
-        finally:
-            release_browser(browser)
+    with __condition:
+        records = list(__records)
+        __records = []
+        __active_slots = 0
+        __condition.notify_all()
+
+    for record in records:
+        _stop_browser(record.browser, timeout=10)
 
 
 atexit.register(cleanup_drivers)

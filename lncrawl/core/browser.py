@@ -1,7 +1,6 @@
 import asyncio
 import base64
 from enum import Enum
-import inspect
 import json
 import logging
 from typing import TYPE_CHECKING, Any, List, Optional
@@ -360,9 +359,9 @@ class Browser:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
+        self.close(reusable=exc_type is None)
 
-    def close(self) -> None:
+    def close(self, reusable: bool = True) -> None:
         if not self._browser:
             return
 
@@ -370,16 +369,11 @@ class Browser:
 
         browser = self._browser
         ctx.logger.debug("Closing browser")
-        try:
-            result = browser.stop()
-            if inspect.isawaitable(result):
-                run_async(result, timeout=self.timeout)
-        except Exception:
-            pass
-        finally:
-            release_browser(browser)
-            self._browser = None
-            self._page = None
+        release_browser(browser, reusable=reusable, timeout=self.timeout)
+        self._browser = None
+        self._page = None
+        self._html_ = None
+        self._soup_ = None
 
     def open_browser(self) -> None:
         if self._browser:
