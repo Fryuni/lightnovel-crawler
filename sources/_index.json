@@ -593,7 +593,7 @@
       "language": "",
       "has_manga": false,
       "can_login": false,
-      "can_search": false,
+      "can_search": true,
       "has_mtl": false,
       "total_commits": 50,
       "contributors": [

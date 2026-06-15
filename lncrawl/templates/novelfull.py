@@ -11,7 +11,7 @@ class NovelFullTemplate(SoupTemplate):
 
     search_item_list_selector = "#list-page .row h3[class*='title'] > a"
     search_item_title_selector = "h3.title"
-    search_item_info_selector = "span.chapter"
+    search_item_info_selector = "span.chapter, .chapter-text"
 
     novel_title_selector = "h3.title"
     novel_cover_selector = ".book img"
@@ -26,7 +26,8 @@ class NovelFullTemplate(SoupTemplate):
         return f"{self.scraper.origin}search?{urlencode({'keyword': query})}"
 
     def parse_search_item_title(self, soup: PageSoup) -> str:
-        return soup.get_attr("title") or soup.text
+        title_tag = soup.select_one(self.search_item_title_selector) or soup
+        return title_tag.get_attr("title") or title_tag.text
 
     def parse_tags(self, soup: PageSoup, novel: Novel) -> None:
         novel.tags = []

@@ -7,6 +7,11 @@ logger = logging.getLogger(__name__)
 
 
 class NovelFullCrawler(NovelFullTemplate):
+    can_search = True
+    search_item_list_selector = "#list-page .archive .list-truyen > .row"
+    search_item_title_selector = "h3[class*='title'] > a"
+    search_item_url_selector = "h3[class*='title'] > a"
+    search_item_info_selector = ".chapter-text, span.chapter"
     base_url = [
         "http://novelfull.com/",
         "https://novelfull.com/",
