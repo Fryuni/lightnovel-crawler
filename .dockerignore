@@ -39,6 +39,7 @@ node_modules
 package.json
 save_pid.txt
 scripts/
+sources/_index.zip
 Test Novel
 windows/
 yarn.lock

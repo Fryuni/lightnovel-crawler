@@ -33,6 +33,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY pyproject.toml uv.lock ./
 COPY lncrawl ./lncrawl
 COPY sources ./sources
+RUN /app/.venv/bin/python -c "import gzip, json, pathlib; p = pathlib.Path('sources/_index.json'); data = json.dumps(json.loads(p.read_text(encoding='utf-8')), ensure_ascii=False).encode(); p.with_name('_index.zip').write_bytes(gzip.compress(data, mtime=0))"
 
 ENV LNCRAWL_DATA_PATH=/data
 
