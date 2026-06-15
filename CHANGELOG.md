@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **BrowserUse browser backend** — text crawlers now drive BrowserUse browsers, using BrowserUse Cloud when `crawler.browser_use_api_key` / `BROWSER_USE_API_KEY` is set and BrowserUse local mode otherwise.
+- **BrowserUse browser backend** — text crawlers now drive BrowserUse browsers, using BrowserUse Cloud when `crawler.browser_use_api_key` / `BROWSER_USE_API_KEY` is set and BrowserUse local mode otherwise. BrowserUse sessions are queued by `crawler.browser_use_concurrency` / `BROWSER_USE_CONCURRENCY`, with auto-detection from BrowserUse Cloud billing and a safe fallback of 3 sessions.
 - **Job notifications** — `JobNotificationService` dispatches email on job state changes (pending → running → success/failure) via a background `TaskManager`; triggered from handler helpers (`_set_running`, `_set_success`, etc.)
 - **Docker healthcheck** — server container now exposes a `/health` probe
 

@@ -522,6 +522,27 @@ class CrawlerConfig(_Section):
         self._set("browser_use_api_key", v)
 
     @property
+    def browser_use_concurrency(self) -> int:
+        """BrowserUse Concurrent Sessions.
+
+        Maximum number of BrowserUse browser sessions that may run at the same time. Set
+        to `0` to auto-detect the BrowserUse Cloud account limit when an API key is
+        configured; if detection is unavailable, the crawler falls back to `3` sessions.
+        The `BROWSER_USE_CONCURRENCY` environment variable overrides this config value.
+        """
+        raw = os.getenv("BROWSER_USE_CONCURRENCY")
+        if raw:
+            try:
+                return max(0, int(raw))
+            except ValueError:
+                logger.warning("Invalid BROWSER_USE_CONCURRENCY value: %s", raw)
+        return self._get("browser_use_concurrency", 0)
+
+    @browser_use_concurrency.setter
+    def browser_use_concurrency(self, v: int) -> None:
+        self._set("browser_use_concurrency", v)
+
+    @property
     def index_file_download_url(self) -> str:
         """Sources Index Download URL.
 

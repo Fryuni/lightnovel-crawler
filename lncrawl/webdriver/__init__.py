@@ -25,7 +25,7 @@ def create_new(
         ctx.config.crawler.browser_use_api_key or os.getenv("BROWSER_USE_API_KEY", "")
     ).strip()
 
-    acquire_queue(timeout)
+    acquire_queue(api_key=api_key)
     try:
         if api_key:
             os.environ["BROWSER_USE_API_KEY"] = api_key
