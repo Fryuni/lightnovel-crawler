@@ -14,6 +14,10 @@ class FetchVolumesRequest(BaseModel):
     volumes: List[str] = Field(description="List of volume ids to fetch")
 
 
+class FetchMissingRequest(BaseModel):
+    novel_id: str = Field(description="The novel id")
+
+
 class FetchChaptersRequest(BaseModel):
     chapters: List[str] = Field(description="List of chapter ids to fetch")
 

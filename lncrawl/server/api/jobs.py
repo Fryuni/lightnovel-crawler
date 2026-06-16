@@ -8,6 +8,7 @@ from ...exceptions import ServerErrors
 from ..models import (
     FetchChaptersRequest,
     FetchImagesRequest,
+    FetchMissingRequest,
     FetchNovelsRequest,
     FetchVolumesRequest,
     MakeArtifactsRequest,
@@ -125,6 +126,14 @@ def fetch_volumes(
     if len(volumes) == 1:
         return ctx.jobs.fetch_volume(user, volumes[0])
     return ctx.jobs.fetch_many_volumes(user, *volumes)
+
+
+@router.post("/create/fetch-missing", summary="Create a job to fetch missing chapter contents")
+def fetch_missing(
+    user: User = Security(ensure_user),
+    body: FetchMissingRequest = Body(),
+) -> Job:
+    return ctx.jobs.fetch_missing_chapters(user, body.novel_id)
 
 
 @router.post("/create/fetch-chapters", summary="Create a job to fetch chapter contents")

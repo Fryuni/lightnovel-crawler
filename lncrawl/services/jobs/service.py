@@ -320,6 +320,38 @@ class JobService:
             type=JobType.CHAPTER_BATCH,
         )
 
+    def fetch_missing_chapters(
+        self,
+        user: User,
+        novel_id: str,
+        *,
+        parent_id: Optional[str] = None,
+        depends_on: Optional[str] = None,
+        **data: Any,
+    ) -> Job:
+        novel = ctx.novels.get(novel_id)
+        chapters = ctx.chapters.list(novel_id=novel_id)
+        chapter_ids = [chapter.id for chapter in chapters if not chapter.is_available]
+        if not chapter_ids:
+            raise ServerErrors.no_chapters_to_download
+
+        data.update({"novel_id": novel_id, "novel_title": novel.title})
+        if len(chapter_ids) == 1:
+            return self.fetch_chapter(
+                user,
+                chapter_ids[0],
+                parent_id=parent_id,
+                depends_on=depends_on,
+                **data,
+            )
+        return self.fetch_many_chapters(
+            user,
+            *chapter_ids,
+            parent_id=parent_id,
+            depends_on=depends_on,
+            **data,
+        )
+
     def translate_chapter(
         self,
         user: User,
