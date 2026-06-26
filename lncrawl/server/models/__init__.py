@@ -3,6 +3,7 @@ from .announcement import AnnouncementCreateRequest, AnnouncementUpdateRequest
 from .config import ConfigProperty, ConfigSection, ConfigUpdateRequest
 from .crawler import LoginData
 from .feedback import (
+    Feedback,
     FeedbackCreateRequest,
     FeedbackRespondRequest,
     FeedbackUpdateRequest,
@@ -10,7 +11,8 @@ from .feedback import (
 from .job import (
     FetchChaptersRequest,
     FetchImagesRequest,
-    FetchMissingRequest,
+    FetchLatestRequest,
+    FetchMissingChaptersRequest,
     FetchNovelsRequest,
     FetchVolumesRequest,
     MakeArtifactsRequest,
@@ -69,9 +71,10 @@ __all__ = [
     # job
     "FetchNovelsRequest",
     "FetchVolumesRequest",
-    "FetchMissingRequest",
     "FetchChaptersRequest",
     "FetchImagesRequest",
+    "FetchMissingChaptersRequest",
+    "FetchLatestRequest",
     "MakeArtifactsRequest",
     "TranslateNovelsRequest",
     "TranslateVolumesRequest",
@@ -99,6 +102,7 @@ __all__ = [
     "PutNotificationRequest",
     "SendInviteRequest",
     # feedback
+    "Feedback",
     "FeedbackCreateRequest",
     "FeedbackUpdateRequest",
     "FeedbackRespondRequest",

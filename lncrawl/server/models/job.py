@@ -14,10 +14,6 @@ class FetchVolumesRequest(BaseModel):
     volumes: List[str] = Field(description="List of volume ids to fetch")
 
 
-class FetchMissingRequest(BaseModel):
-    novel_id: str = Field(description="The novel id")
-
-
 class FetchChaptersRequest(BaseModel):
     chapters: List[str] = Field(description="List of chapter ids to fetch")
 
@@ -46,6 +42,14 @@ class TranslateVolumesRequest(BaseModel):
 class TranslateChaptersRequest(BaseModel):
     chapters: List[str] = Field(description="List of chapter ids to translate")
     language: LanguageCode = Field(description="Target language code")
+
+
+class FetchMissingChaptersRequest(BaseModel):
+    novel_id: str = Field(description="The novel id")
+
+
+class FetchLatestRequest(BaseModel):
+    novel_id: str = Field(description="The novel id")
 
 
 class SearchSourceRequest(BaseModel):

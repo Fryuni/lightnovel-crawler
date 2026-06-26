@@ -3,9 +3,7 @@ build-backend = "setuptools.build_meta"
 requires = ["setuptools>=75.3.0", "wheel>=0.40.0"]
 
 [project]
-authors = [
-  {name = "Lightnovel Crawler Team", email = "lncrawl@pm.me"},
-]
+authors = [{ name = "Lightnovel Crawler Team", email = "lncrawl@pm.me" }]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Natural Language :: English",
@@ -34,10 +32,12 @@ dependencies = [
   "html5lib~=1.1",
   "httpx[brotli,http2]>=0.27.0",
   "humanize>=4.0.0",
-  "lncrawl-scraper[all]==0.1.2",
+  "imap-tools>=1.10.0",
+  "lncrawl-scraper[all]>=0.2.3",
   "lxml>=5.4.0,<7.0.0",
   "browser-use>=0.13,<0.14",
   "openai>=1.0.0",
+  "nodriver>=0.50",
   "passlib[argon2]>=1.7.0",
   "pillow>=10.0.0",
   "psycopg[binary]>=3.2.0",
@@ -64,23 +64,46 @@ dependencies = [
 ]
 description = "Download lightnovels from 300+ sources and export to EPUB, MOBI, PDF, DOCX, and more — with a CLI, REST API, and web UI."
 dynamic = ["version"]
-keywords = ["lightnovel", "webnovel", "crawler", "scraper", "downloader", "novel", "ebook", "epub", "mobi", "pdf"]
+keywords = [
+  "lightnovel",
+  "webnovel",
+  "crawler",
+  "scraper",
+  "downloader",
+  "novel",
+  "ebook",
+  "epub",
+  "mobi",
+  "pdf",
+]
 license = "GPL-3.0-or-later"
 name = "lightnovel-crawler"
 readme = "README.rst"
 requires-python = ">=3.11.0"
 
 [project.optional-dependencies]
-dev = [
-  "build>=1.2.0",
-  "grpcio-tools<=1.78.0",
-  "lxml-stubs>=0.5.0",
-  "pre-commit>=4.3.0",
-  "pyinstaller>=6.0.0",
+lsp = [
+  "pylsp-rope>=0.1.17",
   "pyright>=1.1.409",
+  "python-lsp-ruff>=2.3.1",
+  "python-lsp-server[websockets]>=1.14.0",
   "ruff>=0.9.0",
+]
+build = [
+  "build>=1.2.0",
+  "pyinstaller>=6.0.0",
   "setuptools>=75.3.0",
   "tk-tools>=0.16.0",
+  "wheel>=0.40.0",
+]
+
+[dependency-groups]
+dev = [
+  "grpcio-tools<=1.78.0",
+  "lxml-stubs>=0.5.0",
+  "openai>=1.0.0",
+  "pre-commit>=4.3.0",
+  "ruff>=0.9.0",
   "types-colorama>=0.4.0",
   "types-passlib>=1.7.0",
   "types-python-dateutil>=2.8.0",
@@ -89,17 +112,13 @@ dev = [
   "types-setuptools>=65.0.0",
   "types-tqdm>=4.65.0",
   "types-zstd>=1.5.0",
-  "wheel>=0.40.0",
-]
-lsp = [
-  "pylsp-rope>=0.1.17",
-  "python-lsp-ruff>=2.3.1",
-  "python-lsp-server[websockets]>=1.14.0",
-  "ruff>=0.9.0",
 ]
 
 [tool.uv.pip]
 extra-index-url = ["https://piwheels.org"]
+
+#[tool.uv.sources]
+#lncrawl-scraper = { git = "https://github.com/lncrawl/scraper", branch = "main" }
 
 [project.urls]
 "Changelog" = "https://github.com/lncrawl/lightnovel-crawler/blob/master/CHANGELOG.md"
@@ -116,7 +135,7 @@ lncrawl = "lncrawl:main"
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = {file = "lncrawl/VERSION"}
+version = { file = "lncrawl/VERSION" }
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "docs*", "build*", "dist*"]
@@ -134,13 +153,7 @@ sources = ["**/*", "!**/*.py", "!**/__pycache__/*"]
 constraint-dependencies = ["urllib3<2.0.0"]
 
 [tool.ruff]
-extend-exclude = [
-  ".github",
-  "res",
-  "logs",
-  "Lightnovels",
-  "lncrawl-web",
-]
+extend-exclude = [".github", "res", "logs", "Lightnovels", "lncrawl-web"]
 indent-width = 4
 line-length = 100
 target-version = "py311"
@@ -175,6 +188,4 @@ known-first-party = ["lncrawl"]
 
 [tool.pyright]
 # Completely suppress all errors from these paths
-ignore = [
-  "scripts/**",
-]
+ignore = ["scripts/**"]

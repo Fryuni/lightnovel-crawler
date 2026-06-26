@@ -1,9 +1,9 @@
-#------------------------------------------------
-# Builder: install Python dependencies
-#------------------------------------------------
-ARG BASE_IMAGE=ghcr.io/lncrawl/lncrawl-base:latest
+FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim AS builder
 
-FROM ${BASE_IMAGE} AS builder
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 RUN apt-get update -yq && \
     apt-get install -yq --no-install-recommends \
@@ -15,26 +15,31 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras --all-groups
+    uv sync --frozen --no-dev --extra lsp
 
 #------------------------------------------------
 # Runtime
 #------------------------------------------------
-FROM ${BASE_IMAGE}
+FROM python:3.14-slim-trixie
+
 RUN apt-get update -yq && \
     apt-get install -yq --no-install-recommends \
     chromium \
     && rm -rf /var/lib/apt/lists/*
 
+ENV LNCRAWL_DATA_PATH=/data \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
+
 COPY pyproject.toml uv.lock ./
 COPY lncrawl ./lncrawl
 COPY sources ./sources
 RUN /app/.venv/bin/python -c "import gzip, json, pathlib; p = pathlib.Path('sources/_index.json'); data = json.dumps(json.loads(p.read_text(encoding='utf-8')), ensure_ascii=False).encode(); p.with_name('_index.zip').write_bytes(gzip.compress(data, mtime=0))"
-
-ENV LNCRAWL_DATA_PATH=/data
 
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "lncrawl"]
