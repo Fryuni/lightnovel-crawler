@@ -257,6 +257,9 @@ INDEX_DATA["crawlers"] = dict(sorted(INDEX_DATA["crawlers"].items()))
 INDEX_DATA["rejected"] = dict(sorted(INDEX_DATA["rejected"].items()))
 INDEX_DATA["supported"] = dict(sorted(INDEX_DATA["supported"].items()))
 
+for crawler in INDEX_DATA["crawlers"].values():
+    crawler["base_urls"].sort()
+
 logger.info(
     f"{len(INDEX_DATA['crawlers'])} crawlers. "
     f"{len(INDEX_DATA['supported'])} supported urls. "

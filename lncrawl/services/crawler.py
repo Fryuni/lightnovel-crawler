@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from difflib import SequenceMatcher
+import gc
 import logging
 from threading import Event
 from typing import List, Optional, Union
@@ -51,6 +52,8 @@ class CrawlerService:
             crawler.scraper.signal = prev_signal
             if custom_crawler is None:
                 crawler.close()
+                del crawler
+            gc.collect()
 
     def fetch_novel(
         self,
@@ -113,6 +116,9 @@ class CrawlerService:
             with ctx.db.session() as sess:
                 sess.merge(novel)
                 sess.commit()
+
+            # keep the recommendation title index in sync
+            ctx.recommendations.index_add(novel.id, novel.title)
 
             # add or update tags
             ctx.tags.insert(novel.tags)
