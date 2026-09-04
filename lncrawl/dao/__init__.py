@@ -10,11 +10,11 @@ from .artifact import Artifact
 from .chapter import Chapter, ChapterTranslation
 from .chapter_image import ChapterImage
 from .job import Job
-from .library import Library, LibraryNovel
-from .novel import Novel, NovelTranslation
+from .library import Library, LibraryFavorite, LibraryNovel
+from .novel import Novel, NovelGlossary, NovelTranslation
 from .read_history import ReadHistory
 from .secrets import Secret
-from .tag import Tag
+from .tag import NovelTag, Tag
 from .user import User, UserToken
 from .volume import Volume, VolumeTranslation
 
@@ -23,10 +23,13 @@ models: List[Type[SQLModel]] = [
     User,
     UserToken,
     Tag,
+    NovelTag,
     Library,
     LibraryNovel,
+    LibraryFavorite,
     Novel,
     NovelTranslation,
+    NovelGlossary,
     Volume,
     VolumeTranslation,
     Chapter,

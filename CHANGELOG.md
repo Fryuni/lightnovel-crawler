@@ -2,12 +2,133 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [4.14.0] - 2026-08-03
+
+### Added
+
+- **51 new sources**, across English, Spanish, Chinese, Russian and Turkish. Most cost almost nothing to add: two new templates read any site built on WordPress categories or Blogger labels, which is what a large share of translation blogs are.
+- **A link from an unsupported site can now be read by guessing the page structure** — off by default, via **Guess Unsupported Sites**. Chapter text comes out reliably; the chapter *list* is inferred, so every result says how much of the list it could account for. Read that before trusting the download: a site that hides part of its list behind a button produces a book quietly missing chapters.
+- **A Proxies screen, and proxies can now say what kind of address they are.** Only ISP, residential and mobile addresses get past a site that blocks on reputation, and every proxy used to be read as datacenter — so a residential proxy bought for exactly that was never used for it. Existing configuration imports automatically.
+- **Six crawler settings you could not reach before**, including how many requests a site gets at once, and whether pages may be read from the Web Archive. Archive reading can recover a novel from a site that is gone for good; it is off by default because it sends the first visit to *every* site to a snapshot.
+
+### Changed
+
+- **A rewritten HTTP layer, built around how sites detect crawlers.** Across 150 real source hosts it retrieves more of them, and a challenge is answered by a real browser whose clearance is then reused.
+  - **Firefox solves by default, Chrome as the fallback**, with a **Challenge Solver Browser** setting to name one. Whichever browser solves decides what every later request has to look like, and Firefox reaches the most sites.
+  - **The browser stays hidden, and shows itself only when hiding fails.** A hidden browser gets past every site a visible one does, so the window is worth opening only for the challenge nothing can answer alone — and once it is open it waits five minutes instead of ninety seconds, because somebody is there to finish it. A new **Challenge Solver Window** setting pins it to always hidden or always visible; on a server it stays hidden whatever you pick, since nobody could see it. Replaces the old headless switch.
+  - **The Docker image ships Firefox on `arm64` as well**, so an `arm64` image can solve for the first time. **Set `TZ`** to the timezone your address looks like it is in: with the container clock left wrong it cleared one challenged site of six, and with it right, all six.
+  - New `impersonate` setting; `selenium_grid` is gone.
+- **50 source domains are flagged as rejected** — parked, redirecting into an ad network, or resold. None reported an error: a page full of adverts answers `200`, so the crawl succeeded and produced an empty book.
+- **`wordexcerpt` and `webnovelonline` rebuilt** against the APIs their sites now use, after both became single-page apps their old selectors read as empty. `webnovelonline` now walks its whole listing — 1305 chapters where the page shows 50.
+- **Forty sources were fetching fewer chapters at once than they could.** Ten go from one worker to three, thirty from two.
+- **The README is rewritten and the site list moved to `SOURCES.md`**, so the front page is about installing and using the app rather than 600 lines of table.
+
+### Fixed
+
+- **An empty chapter is no longer saved and marked finished** — the most common way a source breaks, with no signal for it anywhere. It is retried now, and chapters already stored empty are reopened on their own. A challenge page served as `200` is no longer parsed as chapter content either.
+- **A failed job says why, instead of showing a stack trace** — which defence is blocking, and whether any setting could help.
+- **`allow_fallback_on_proxy_miss` said the opposite of what it does.** The direct address joins the proxy list ranked ahead of Tor and datacenter ones, so with a tor-pool configured at the default, requests were leaving from the machine's own address.
+- **`lncrawl search` now ends when it says it will.** A 10 second timeout measured 74; the same search finishes in 16 and returns *more*.
+- **The server no longer leaks memory on every failed request** — 66 MB per 800 requests, now flat over 6,400.
+- Smaller: a page that never finished rendering is a diagnosis rather than a crash; a source's chosen HTML parser is finally used; a source's main address no longer varies between runs; what a crawl learned survives the command exiting; `chireads` search results have titles again.
+
+## [4.13.1] - 2026-07-25
+
+### Fixed
+
+- **Translator Dashboard** — Fixes dependency import in PyInstaller build
+
+## [4.13.0] - 2026-07-25
+
+### Added
+
+- **In-process translation engine** — the built-in translator backends (Google/Bing/Baidu/Microsoft/Lingva) are replaced by the external `lncrawl-translator` package run in-process, giving multi-engine routing and failover managed from an admin-gated dashboard mounted at `/api/translator`. New config: a `translator.enabled` master switch to turn the feature off, plus `translator.request_timeout` and `translator.config_file`
+- **Novel glossary** — a per-novel, per-language translation glossary (new `add_novel_glossary_table` migration) is sent with every request and merged back from the engine so names stay consistent across chapters; manageable via the API and kept when a translation is deleted
+- **Single-volume artifacts** — `POST /api/jobs/create/make-artifacts` accepts an optional `volume` (volume serial number) to build an e-book covering just that volume; artifacts record the volume in a new `volume` column (new `artifact_volume_column` migration) and can be filtered by it via `GET /api/artifacts`. Whole-novel listings (`list_latest`/novel page/download emails) still show only full-novel artifacts
+- **Per-translation delete** — remove a single language's translation of a novel without touching the others (the glossary is preserved)
+- **Translated titles & volume filtering** — `list_latest`/`get_latest` support a volume filter, and the chapter/volume detail endpoints accept a `language` query param to return translated titles
+- **Library favorites** — favorite a library and list favorites (new `library_favorites` migration)
+- **Reading history page** — new endpoints and response models surface reading stats and continue-reading
+- **Basic-tier translation** — single-novel translation jobs are available to the basic tier
+- **Automatic novel language** — a novel's language is detected and set while crawling
+
+### Changed
+
+- **Per-source request rate limiting** — `request_concurrency` and the rate knob are merged into a single per-source `request_rate_limit`, now enforced across every concurrent job hitting a source; `FetchService` uses one scraper instance per thread
+- **Resilient desktop webview startup** — startup is reworked for a smoother experience: readiness is gated on `/health`, with a fail-fast path when the server exits early and a system-browser fallback
+- **Faster CLI startup** — the FastAPI import is deferred off the crawler/source import path
+- **Sliding sessions** — the current session is kept alive via a refresh token on `/me`, now with an absolute cap (new `server.session_max_lifetime`, default 30 days) and role/tier re-derived from the live user on each refresh
+- **Translator dashboard proxying** — proxied via base-href injection instead of URL rewriting; only the translator API is admin-gated
+
+### Fixed
+
+- **SMTP** — reconnect stale connections before sending mail
+- **Glossary merge race** — concurrent translation jobs of the same novel no longer collide on the glossary unique constraint or drop each other's terms
+- **Invite reply loop** — the incoming Subject/Message-ID reused for threaded invite replies are sanitized, so a crafted email can no longer wedge the invite handler into an endless reprocess loop
+- **Artifact listing count** — the paginated total now applies the same filters as the results, fixing page counts
+- **Source crawlers** — migrated many sources to the declarative `request_rate_limit` attribute
+
+## [4.12.0] - 2026-07-14
+
+### Added
+
+- **Novel list filtering** — `GET /api/novels` gains sort modes (`popular`, `updated`, `created`, `chapters`, `title_asc`, `title_desc`) via a new `NovelSort` enum, backed by a `novel_popularity` migration and activity-derived popularity scoring
+- **Per-novel tags** — tag attachments now live in a dedicated `NovelTag` table (new `novel_tags` migration) instead of being embedded, with supporting DAO/service changes across `tags.py`, `novels.py`, and `crawler.py`
+- **CLI resume & rate limit** (#3105) — `lncrawl crawl` gains `--resume`/`--missing` to download only not-yet-crawled chapters and `--rate-limit` to throttle requests; `--resume` and `--refresh` are mutually exclusive
+- **`novelarrow.com`** — new source crawler
+
+### Changed
+
+- **Enums stored as plain scalars** — DAO models no longer use native DB enum types; enum columns are stored as plain scalars, removing the need for Postgres enum-sync migrations (new `drop_native_enums` migration)
+- **Dialect-split schema evolution** — `services/db.py` schema evolution is now split by dialect, and the SQLite DB is rebuilt from the current models while preserving data
+- **Sources list not cached** — `GET /api/sources` no longer caches its response
+
+### Fixed
+
+- **`novelfull`** — stop downloading duplicate "half" chapters, and drop an unnecessary `soup.decompose` call in chapter-body parsing
+- **Source language generation** — corrected language derivation in the sources helper
+
+## [4.11.0] - 2026-07-09
+
+### Added
+
+- **Continue reading** — a new history endpoint and supporting `HistoryService` logic surface the most recent in-progress chapter so readers can resume where they left off; new response models under `server/models/history.py`
+- **Library covers** — a library now displays the first available novel cover as its cover image; `LibraryService` and the library DAO/response models updated accordingly
+- **Daily active users** — `GlobalActivitySummary` gains a `dau` field alongside `mau`, and admin usage is aggregated by hour with day-of-week bucketing
+
+### Changed
+
+- **Recommendation service** — improved recommendation logic and wiring across `recommendations.py`, `novels.py`, and `crawler.py`
+- **Job dependency handling** — `FETCH_LATEST` jobs now respect dependencies; pending-job retrieval refactored (dropped the `skip_domains` parameter)
+- **Activity retention** — `Scrubber` deletes `UserActivity` records older than 90 days
+
+### Fixed
+
+- **`lightnovelstranslations.com`** (#3067) — stop prepending the scraper origin to an already-absolute novel URL, which produced a malformed 404ing URL
+- **Chapter history** — corrected chapter history addition
+- **SQLAlchemy 2.0** — fixed usage list compatibility
 
 ## [4.10.0] - 2026-06-28
 
-<!-- TBD -->
+### Added
+
+- **Activity heatmap** — hourly usage heatmap bucketing events by day-of-week × hour-of-day using portable integer epoch math (identical on SQLite and PostgreSQL) and shifted by a `tz_offset` query param to reflect the viewer's local time, plus additional activity-dashboard metrics — useful for spotting low-traffic deploy/maintenance windows
+- **One runner per domain** — the job scheduler now guarantees a single runner processes a given domain at a time; new `job_domain` migration with supporting DAO/service logic
+- **GitHub feedback** — feedback is submitted directly as GitHub issues via `utils/github.py`; the local `feedback` table is dropped (new migration)
+
+### Changed
+
+- **DB schema validation reworked** — schema validation now runs through `services/db.py` on startup, with a dev `migrate` command and a lint-workflow hook
+- **Job runner hardening** — added a drain loop and failure safety net, consolidated queue claims, only cancels stuck jobs on runner reset, rests between iterations, and runs `gc` during scheduler reset
+- **`openai` moved to a dev dependency**; CI workflows optimized
+- **Updated `lncrawl-scraper`**
+
+### Fixed
+
+- **`freewebnovel`** (#3060) — source corrected
+- Assorted cleanup and minor fixes across the crawler, binder, mail, and static-file middleware
 
 ## [4.9.0] - 2026-06-20
 
@@ -695,8 +816,7 @@ Major changes in this release:
 ## [2.24.3] - 2021-02-12
 
 - Adds new source
-- Fixes bug
-  #733
+- Fixes bug #733
 
 ## [2.24.1] - 2020-12-14
 

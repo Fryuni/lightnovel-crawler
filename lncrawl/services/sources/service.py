@@ -1,19 +1,22 @@
 import asyncio
 import logging
 from pathlib import Path
-import threading
 from threading import Event, Thread
 import traceback
 from typing import Dict, List, Optional, Type
+from urllib.parse import urlsplit
+
+from scraper import LAYERS, extract_host
 
 from ...context import ctx
 from ...core import Crawler
-from ...exceptions import AbortedException, ServerErrors
-from ...server.models import CrawlerIndex, CrawlerInfo, SourceItem
+from ...core.tiers import LEGACY, TIERS, describe, outranks
+from ...exceptions import AbortedException, ServerError, ServerErrors
+from ...server.models import CrawlerIndex, CrawlerInfo, SourceDiagnosis, SourceItem
 from ...utils.event_lock import EventLock
 from ...utils.fts_store import FTSStore
 from ...utils.text_tools import normalize
-from ...utils.url_tools import extract_host, normalize_url
+from ...utils.url_tools import normalize_url
 from .helper import (
     batch_import,
     create_crawler_info,
@@ -21,6 +24,7 @@ from .helper import (
     load_offline_source,
     save_source,
 )
+from .spec_tier import load_specs
 from .tester import run_crawler_test
 
 logger = logging.getLogger(__name__)
@@ -140,7 +144,7 @@ class Sources:
                     host = extract_host(url)
                     self.rejected[host] = reason
 
-                # dynamically import all crawlers
+                # import legacy crawlers (TODO: to be discontinued)
                 self.info.clear()
                 self.crawlers.clear()
                 self.sources.clear()
@@ -148,6 +152,11 @@ class Sources:
                     *ctx.config.crawler.local_sources.glob("**/*.py"),
                     *ctx.config.crawler.user_sources.glob("**/*.py"),
                 )
+
+                # load the new specs tier
+                self.load_specs()
+
+                self.log_tier_tally()
         except AbortedException:
             pass
 
@@ -156,6 +165,31 @@ class Sources:
             if self._signal.is_set():
                 return
             self.add_crawler(crawler)
+
+    def load_specs(self):
+        """Register the spec tier, if there is one.
+
+        Silent when the definitions directory or the interpreter is absent, which is the state
+        every checkout is in until both exist. lncrawl then behaves exactly as it did before.
+        """
+        for crawler in load_specs(ctx.config.crawler.spec_sources).values():
+            if self._signal.is_set():
+                return
+            self.add_crawler(crawler)
+
+    def log_tier_tally(self):
+        """How many hosts each tier ended up serving.
+
+        A spec tier that failed to load is otherwise indistinguishable from one that was never
+        configured: both simply leave the legacy crawlers in place.
+        """
+        tally = {tier: 0 for tier in TIERS}
+        for item in self.sources.values():
+            tally[item.tier] = tally.get(item.tier, 0) + 1
+        logger.info(
+            "Sources by tier: %s",
+            ", ".join(f"{count} {tier}" for tier, count in tally.items()),
+        )
 
     def add_crawler(self, crawler: Type[Crawler]):
         # Keep repository metadata from the index, but always trust the imported
@@ -174,12 +208,19 @@ class Sources:
             info.can_login = current.can_login
             info.can_search = current.can_search
             info.has_mtl = current.has_mtl
+            info.request_rate_limit = current.request_rate_limit
         else:
             logger.info(f"Found non-indexed crawler: {name}")
             info = current
             self._index.crawlers[cid] = info
-        # skip this crawler if it is not the latest
-        if cid in self.info and info.version < self.info[cid].version:
+
+        tier = getattr(crawler, "tier", LEGACY)
+
+        # skip this crawler if something already registered outranks it
+        current = self.crawlers.get(cid)
+        if current is not None and not outranks(
+            tier, info.version, getattr(current, "tier", LEGACY), self.info[cid].version
+        ):
             return
         self.info[cid] = info
         self.crawlers[cid] = crawler
@@ -188,12 +229,18 @@ class Sources:
         for url in crawler.base_url:
             if self._signal.is_set():
                 return
-            self.add_source(url, info)
+            self.add_source(url, info, tier)
 
-    def add_source(self, url: str, info: CrawlerInfo):
-        item = create_source_item(url, info, self.rejected)
-        # skip this item if it is not the latest
-        if item.domain in self.sources and item.version < self.sources[item.domain].version:
+    def add_source(self, url: str, info: CrawlerInfo, tier: str = LEGACY):
+        item = create_source_item(url, info, self.rejected, tier)
+
+        # Tier first, version only within a tier. Comparing versions alone would let a legacy
+        # crawler re-downloaded by the sync outrank the spec meant to replace it, because its
+        # version is a timestamp and the download refreshes it.
+        existing = self.sources.get(item.domain)
+        if existing is not None and not outranks(
+            item.tier, item.version, existing.tier, existing.version
+        ):
             return
         self.sources[item.domain] = item
 
@@ -250,6 +297,56 @@ class Sources:
         source = self.get_source(domain)
         return self.info[source.crawler_id]
 
+    def diagnose(self, domain: str) -> SourceDiagnosis:
+        """Why *domain* is or is not working.
+
+        Reports a rejection rather than refusing on one, unlike every crawl path — a
+        rejected host is the one whose diagnosis is most worth reading — and answers
+        for a rejected host that has no crawler at all, which is most of them.
+        """
+        self.ensure_load()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        rejected = self.rejected.get(domain)
+        source = self.sources.get(domain)
+        if source is None and rejected is None:
+            raise ServerErrors.no_crawler.with_extra(domain)
+
+        url = source.url if source else f"https://{domain}/"
+        health = ctx.health.reasons(domain)
+        result = SourceDiagnosis(
+            domain=domain,
+            url=url,
+            rejected=rejected,
+            is_disabled=source.is_disabled if source else True,
+            disable_reason=source.disable_reason if source else rejected,
+            health=health,
+            samples={reason: ctx.health.samples(domain, reason) for reason in health},
+            explain=ctx.scraper.explain(url),
+        )
+
+        profile = ctx.scraper.knows(url)
+        if profile is None:
+            return result
+
+        result.known = True
+        result.tier = profile.tier
+        result.interval = profile.interval
+        result.successes = profile.successes
+        result.failures = profile.failures
+        result.consecutive_failures = profile.consecutive_failures
+        result.has_clearance = profile.clearance_for(url) is not None
+
+        layer = profile.binding
+        if layer is not None:
+            facts = LAYERS[layer]
+            result.binding_layer = int(layer)
+            result.binding_layer_name = str(layer)
+            result.reads = facts.trait.value
+            result.stance = facts.stance.value
+            result.summary = facts.summary
+        return result
+
     def get_crawler(self, domain: str) -> Type[Crawler]:
         source = self.get_source(domain)
         return self.crawlers[source.crawler_id]
@@ -261,20 +358,70 @@ class Sources:
     def init_crawler(
         self,
         url: str,
-        workers: Optional[int] = None,
         parser: Optional[str] = None,
+        timeout: Optional[float] = None,
+        probe: bool = False,
     ) -> Crawler:
         domain = self.get_domain(url)
-        source = self.get_source(domain)
+        try:
+            source = self.get_source(domain)
+        except ServerError:
+            if not ctx.config.crawler.generic_fallback:
+                raise
+            return self._init_generic(url, domain, parser, timeout, probe)
+
         cid = source.crawler_id
         constructor = self.crawlers[cid]
 
         # create instance
-        ctx.logger.debug(f"Creating crawler instance for {url}")
+        ctx.logger.debug(
+            f"Creating crawler instance for {url}: {describe(source.tier, source.file_path)}"
+        )
+        open_session = ctx.scraper.probe if probe else ctx.scraper.open
         crawler = constructor(
             origin=source.url,
-            workers=workers,
             parser=parser,
+            scraper=open_session(
+                source.url,
+                parser=parser,
+                rate_limit=constructor.request_rate_limit,
+                timeout=timeout,
+            ),
+        )
+
+        if not crawler.language:
+            crawler.language = source.language
+
+        crawler.initialize()
+        return crawler
+
+    def _init_generic(
+        self,
+        url: str,
+        domain: str,
+        parser: Optional[str],
+        timeout: Optional[float],
+        probe: bool,
+    ) -> Crawler:
+        """Read a site nobody has written a crawler for, by guessing its structure.
+
+        Deliberately not registered as a source: it has no `base_url`, answers for any
+        host, and must never be mistaken for one that has been verified against the site.
+        """
+        from ...templates.generic import GenericCrawler
+
+        origin = f"{urlsplit(url).scheme or 'https'}://{urlsplit(url).netloc}/"
+        ctx.logger.warn(f"No crawler for {domain}, guessing the page structure")
+        open_session = ctx.scraper.probe if probe else ctx.scraper.open
+        crawler = GenericCrawler(
+            origin=origin,
+            parser=parser,
+            scraper=open_session(
+                origin,
+                parser=parser,
+                rate_limit=GenericCrawler.request_rate_limit,
+                timeout=timeout,
+            ),
         )
         crawler.initialize()
         return crawler
@@ -302,7 +449,7 @@ class Sources:
                 event.set()
                 emit("END")
 
-        threading.Thread(target=run, daemon=True).start()
+        Thread(target=run, daemon=True).start()
 
         while True:
             item = await queue.get()

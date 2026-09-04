@@ -32,6 +32,12 @@ class __AppContext__:
         return GitHubService()
 
     @cached_property
+    def health(self):
+        from .services.health import SourceHealth
+
+        return SourceHealth()
+
+    @cached_property
     def logger(self):
         from .services.logger import Logger
 
@@ -60,6 +66,12 @@ class __AppContext__:
         from .services.file import FileService
 
         return FileService()
+
+    @cached_property
+    def scraper(self):
+        from .services.scraper import ScraperService
+
+        return ScraperService()
 
     @cached_property
     def sources(self):
@@ -212,10 +224,10 @@ class __AppContext__:
             self.db.close()
         if "lsp" in self.__dict__:
             self.lsp.stop()
-        if "translations" in self.__dict__:
+        if "translator" in self.__dict__:
             self.translator.close()
-        if "http" in self.__dict__:
-            self.http.close()
+        if "scraper" in self.__dict__:
+            self.scraper.close()
 
     def setup(
         self,

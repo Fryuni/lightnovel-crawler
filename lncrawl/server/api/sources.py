@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Body, Path, Query, Security
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from ...context import ctx
 from ...dao import ActivityType, User
@@ -10,9 +10,10 @@ from ..models import (
     CrawlerTestRequest,
     PRCreateRequest,
     PRResponse,
+    SourceDiagnosis,
     SourceItem,
 )
-from ..security import ensure_user
+from ..security import ensure_admin, ensure_user
 
 router = APIRouter()
 
@@ -20,12 +21,11 @@ router = APIRouter()
 @router.get(
     "s",
     summary="Returns a list of supported sources",
-    response_model=List[SourceItem],
 )
 def list_sources(
     skip_rejected: bool = Query(default=False, help="Send true to skip rejected sources"),
     user: User = Security(ensure_user),
-):
+) -> List[SourceItem]:
     ctx.activity.record(user.id, ActivityType.SOURCES, "sources")
     count = ctx.novels.list_domains()
     result = ctx.sources.list(
@@ -33,13 +33,7 @@ def list_sources(
     )
     for item in result:
         item.total_novels = count.get(item.domain, 0)
-    return JSONResponse(
-        content=[item.model_dump() for item in result],
-        headers={
-            "ETag": str(ctx.sources.version),
-            "Cache-Control": "public, max-age=14400",
-        },
-    )
+    return result
 
 
 @router.get(
@@ -51,6 +45,15 @@ def get_source(domain: str) -> SourceItem:
     if source is None:
         raise ServerErrors.no_crawler.with_extra(domain)
     return source
+
+
+@router.get(
+    "/{domain}/diagnosis",
+    summary="Explain why a source is failing (Admin only)",
+    dependencies=[Security(ensure_admin)],
+)
+def get_source_diagnosis(domain: str = Path()) -> SourceDiagnosis:
+    return ctx.sources.diagnose(domain)
 
 
 @router.get(

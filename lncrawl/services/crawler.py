@@ -6,14 +6,37 @@ from threading import Event
 from typing import List, Optional, Union
 
 from pydantic import HttpUrl
+from scraper import extract_host
 
 from ..context import ctx
 from ..core import Chapter as CrawlerChapter, Crawler, Novel as CrawlerNovel, SearchResult
+from ..core.tiers import describe, is_stale, stamp
 from ..dao import Chapter, ChapterImage, Novel
+from ..enums import LanguageCode
 from ..exceptions import ServerErrors
-from ..utils.url_tools import extract_host
+from .chapters import EMPTY_ATTEMPTS_KEY
 
 logger = logging.getLogger(__name__)
+
+# How often a chapter that came back empty is fetched again before it is left alone
+MAX_EMPTY_ATTEMPTS = 3
+
+
+def _normalize_language(lang: Optional[str]) -> Optional[str]:
+    """A known base language code or None. Source-derived values include
+    'multi' and regional variants (zh-cn) that must not reach the CHAR(2)
+    Novel.language column."""
+    if not lang:
+        return None
+    base = lang.strip().lower().split("-")[0]
+    try:
+        return LanguageCode(base).value
+    except ValueError:
+        return None
+
+
+def _origin_of(crawler: Crawler) -> str:
+    return describe(getattr(crawler, "tier", None), getattr(crawler, "__file__", ""))
 
 
 class CrawlerService:
@@ -32,6 +55,7 @@ class CrawlerService:
         if crawler is None:
             crawler = ctx.sources.init_crawler(url)
 
+        crawler.novel_url = url
         prev_signal = crawler.scraper.signal
         if signal:
             crawler.scraper.signal = signal
@@ -70,6 +94,8 @@ class CrawlerService:
         novel_url = str(url)
 
         with self.prepare_crawler(user_id, novel_url, signal, custom) as crawler:
+            logger.info(f"Using {_origin_of(crawler)} to crawl {novel_url}")
+
             # fetch novel metadata
             model = CrawlerNovel(url=novel_url)
             crawler.read_novel(model)
@@ -102,15 +128,20 @@ class CrawlerService:
             novel.synopsis = model.synopsis
             novel.tags = model.tags or []
             novel.rtl = model.is_rtl or False
-            novel.language = model.language
             novel.volume_count = len(model.volumes)
             novel.chapter_count = len(model.chapters)
+
+            # detect novel language
+            sample = f"{model.title}\n{model.synopsis or ''}".strip()
+            language = ctx.translator.detect_language(sample)
+            if not language:
+                language = model.language or crawler.language
+            novel.language = _normalize_language(language)
 
             # update novel extra
             extra = dict(**novel.extra)
             extra.update(model.get_extras())
-            extra["crawler_version"] = crawler.version
-            novel.extra = extra
+            novel.extra = stamp(extra, crawler.version, crawler.tier)
 
             # save updates
             with ctx.db.session() as sess:
@@ -120,8 +151,8 @@ class CrawlerService:
             # keep the recommendation title index in sync
             ctx.recommendations.index_add(novel.id, novel.title)
 
-            # add or update tags
-            ctx.tags.insert(novel.tags)
+            # add or update tags (vocabulary + normalized associations)
+            ctx.tags.set_novel_tags(novel.id, novel.tags)
 
             # add or update volumes
             ctx.volumes.sync(novel.id, model.volumes)
@@ -161,11 +192,13 @@ class CrawlerService:
             raise ServerErrors.invalid_url
 
         with self.prepare_crawler(user_id, novel.url, signal, custom) as crawler:
-            # check if download is necessary
+            # check if download is necessary. Staleness needs positive evidence: the same
+            # tier, both versions known, and different. A host that moved tiers, or content
+            # stamped before this existed, is left alone rather than re-downloaded.
             if (
                 not refresh
                 and chapter.is_available
-                and chapter.extra.get("crawler_version") == crawler.version
+                and not is_stale(chapter.extra, crawler.version, crawler.tier)
             ):
                 logger.debug(f"Skipped: {novel.title}] - Chapter {chapter.serial}")
                 return chapter
@@ -179,10 +212,22 @@ class CrawlerService:
             model.update(chapter.extra)
             crawler.download_chapter(model)
             crawler.format_chapter(model)
-            assert model.body is not None
+
+            body = model.body or ""
+            if not model.success or not body:
+                return self._chapter_came_back_empty(chapter, novel, crawler)
 
             # save chapter content
-            ctx.files.save_text(chapter.content_file, model.body)
+            ctx.files.save_text(chapter.content_file, body)
+
+            # detect language from chapter (strong signal)
+            language = ctx.translator.detect_language(body)
+            language = _normalize_language(language)
+            if language and novel.language != language:
+                novel.language = language
+                with ctx.db.session() as sess:
+                    sess.merge(novel)
+                    sess.commit()
 
             # save chapter images
             ctx.images.sync(chapter, model.images)
@@ -190,8 +235,7 @@ class CrawlerService:
             # set extras
             extra = dict(**chapter.extra)
             extra.update(model.get_extras())
-            extra["crawler_version"] = crawler.version
-            chapter.extra = extra
+            chapter.extra = stamp(extra, crawler.version, crawler.tier)
 
             # update title and status
             chapter.is_done = True
@@ -204,6 +248,37 @@ class CrawlerService:
 
             logger.debug(f"Downloaded chapter: {novel.title}] - Chapter {chapter.serial}")
             return chapter
+
+    def _chapter_came_back_empty(
+        self,
+        chapter: Chapter,
+        novel: Novel,
+        crawler: Crawler,
+    ) -> Chapter:
+        attempts = int(chapter.extra.get(EMPTY_ATTEMPTS_KEY) or 0) + 1
+        ctx.health.record(
+            extract_host(novel.url),
+            "empty_body",
+            f"chapter {chapter.serial} ({chapter.url})",
+        )
+
+        extra = dict(**chapter.extra)
+        extra[EMPTY_ATTEMPTS_KEY] = attempts
+        chapter.extra = stamp(extra, crawler.version, crawler.tier)
+        chapter.is_done = attempts >= MAX_EMPTY_ATTEMPTS
+
+        with ctx.db.session() as sess:
+            sess.merge(chapter)
+            sess.commit()
+
+        logger.warning(
+            "Empty chapter body: %s - Chapter %s (attempt %d of %d)",
+            novel.title,
+            chapter.serial,
+            attempts,
+            MAX_EMPTY_ATTEMPTS,
+        )
+        return chapter
 
     def fetch_image(
         self,
@@ -227,7 +302,7 @@ class CrawlerService:
             if (
                 not refresh
                 and image.is_available
-                and image.extra.get("crawler_version") == crawler.version
+                and not is_stale(image.extra, crawler.version, crawler.tier)
             ):
                 logger.debug(f"Skipped: {novel.title}] - Image {image.id}")
                 return image
@@ -237,9 +312,7 @@ class CrawlerService:
             crawler.download_image(str(url), file)
 
             image.is_done = file.is_file()
-            extra = dict(**image.extra)
-            extra["crawler_version"] = crawler.version
-            image.extra = extra
+            image.extra = stamp(dict(**image.extra), crawler.version, crawler.tier)
 
             # update db
             with ctx.db.session() as sess:
@@ -260,6 +333,7 @@ class CrawlerService:
         # get crawler
         source = ctx.sources.get_source(domain)
         with self.prepare_crawler(user_id, source.url, signal, custom) as crawler:
+            logger.info(f"Using {_origin_of(crawler)} to search {domain}")
             results = list(crawler.search(query))
             results.sort(key=lambda x: -SequenceMatcher(a=x.title, b=query).ratio())
             return list(results)

@@ -10,11 +10,11 @@ from typing import List, Optional
 
 import questionary
 from rich import print
+from scraper import extract_base, extract_host, validate_url
 import typer
 
 from ...assets.languages import language_codes
 from ...context import ctx
-from ...utils.url_tools import extract_base, extract_host, validate_url
 from .app import app
 
 logger = logging.getLogger(__name__)
@@ -206,13 +206,16 @@ logger = logging.getLogger(__name__)
 
     content += f"""
 class {name}(SoupTemplate):
-    \"\"\"Scraper first; falls back to a real browser when requests fail.\"\"\"
+    \"\"\"Declarative selectors over the shared scraper session.\"\"\"
 
     base_url = ["{base_url}"]
     has_manga = {Feature.has_manga in features}
     has_mtl = {Feature.has_mtl in features}
     can_login = {Feature.can_login in features}
     can_search = {Feature.can_search in features}
+
+    # Enforced per source domain across all concurrent jobs.
+    # request_rate_limit = 3.0  # max requests per second
 """
 
     if Feature.can_search in features:
@@ -248,7 +251,6 @@ class {name}(SoupTemplate):
     def initialize(self) -> None:
         # You can customize `TextCleaner` and other necessary things.
         super().initialize()
-        self.taskman.init_executor(1)
 """
 
     if Feature.can_login in features:
@@ -307,7 +309,7 @@ class Crawler(ABC):
     chapters_per_volume = 100
     auto_create_volumes = True  # False when the site has real volume sections; then use volume_* selectors
 
-    def __init__(self, origin: str, workers: Optional[int] = None, parser: Optional[str] = None) -> None:
+    def __init__(self, origin: str, parser: Optional[str] = None) -> None:
         # origin must match a normalized entry in base_url; creates self.scraper, self.taskman, self.cleaner
 
     def initialize(self) -> None: ...
@@ -392,7 +394,8 @@ def _fill_with_openai(url: str, stub: str) -> str:
         f"You are given the URL of a novel-hosting website: `{url}`.\n\n"
         "Fetch the site content, find a representative novel page and a chapter page, then return a "
         "completed version of the class below.\n\n"
-        "The crawler subclasses `SoupTemplate` (lncrawl.core): HTTP first, browser fallback on failure. "
+        "The crawler subclasses `SoupTemplate` (lncrawl.core). Never drive a browser from a source: "
+        "the scraper escalates to one itself when a challenge is binding. "
         "Under that is `SoupTemplate`, which already implements `read_novel`, `download_chapter`, and `search` "
         "using **class-level CSS selector strings** when those are set correctly.\n\n"
         "**Priority 1 — selectors (do these first):** Fill every selector attribute that appears in the stub "

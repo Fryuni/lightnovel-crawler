@@ -46,6 +46,13 @@ class Novel(BaseTable, table=True):
         description="Number of available chapters",
     )
 
+    popularity: int = sa.Field(
+        default=0,
+        index=True,
+        sa_type=sa.BigInteger,
+        description="Accumulated all-time reader visits folded in from scrubbed activity",
+    )
+
     @computed_field  # type: ignore[misc]
     @property
     def cover_file(self) -> str:
@@ -72,3 +79,19 @@ class NovelTranslation(BaseTable, table=True):
     title: str = sa.Field(description="Translated title of the novel")
     authors: Optional[str] = sa.Field(default=None, description="Translated list of authors")
     synopsis: Optional[str] = sa.Field(default=None, description="Translated synopsis or novel")
+
+
+class NovelGlossary(BaseTable, table=True):
+    __tablename__ = "novel_glossaries"  # type: ignore
+    __table_args__ = (
+        sa.UniqueConstraint("novel_id", "language"),
+        sa.Index("ix_novel_glossary_lookup", "novel_id", "language"),
+    )
+
+    novel_id: str = sa.Field(foreign_key="novels.id", ondelete="CASCADE")
+    language: str = sa.Field(description="Target language code, e.g. 'en'")
+    terms: dict = sa.Field(
+        default={},
+        sa_type=sa.JSON,
+        description="Source term -> chosen translation, grown across chapters",
+    )

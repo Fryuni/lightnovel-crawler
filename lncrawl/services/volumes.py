@@ -80,6 +80,16 @@ class VolumeService:
                 raise ServerErrors.no_such_volume
             return volume
 
+    def find_translated(
+        self,
+        novel_id: str,
+        serial: int,
+        language: Optional[LanguageCode] = None,
+    ) -> Volume:
+        volume = self.find(novel_id, serial)
+        self._put_translations([volume], language)
+        return volume
+
     def get_volume_translation(self, volume: Volume, language: LanguageCode):
         with ctx.db.session() as sess:
             return sess.exec(
@@ -92,7 +102,11 @@ class VolumeService:
                 .limit(1)
             ).first()
 
-    def get_translated(self, volume_id: str, language: Optional[LanguageCode] = None) -> Volume:
+    def get_translated(
+        self,
+        volume_id: str,
+        language: Optional[LanguageCode] = None,
+    ) -> Volume:
         volume = self.get(volume_id)
         if language:
             translation = self.get_volume_translation(volume, language)

@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 import re
+import shutil
 from threading import Event
 from typing import Optional
 
@@ -201,7 +202,11 @@ def make_epub(working_dir: Path, artifact: Artifact, signal=Event(), **kwargs) -
     # add volumes and chapters pages
     if signal.is_set():
         raise AbortedException()
-    for volume in ctx.volumes.list(artifact.novel_id, language):
+    if artifact.volume is not None:
+        volumes = [ctx.volumes.find_translated(artifact.novel_id, artifact.volume, language)]
+    else:
+        volumes = ctx.volumes.list(artifact.novel_id, language)
+    for volume in volumes:
         if signal.is_set():
             raise AbortedException()
 
@@ -248,5 +253,5 @@ def make_epub(working_dir: Path, artifact: Artifact, signal=Event(), **kwargs) -
     epub.write_epub(str(tmp_file), book, {})
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.unlink(True)
-    tmp_file.rename(out_file)
+    shutil.move(str(tmp_file), str(out_file))
     logger.info(f"Created: {out_file}")

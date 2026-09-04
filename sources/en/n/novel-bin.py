@@ -9,6 +9,5 @@ class Novel_Bin(NovelFullTemplate):
     has_mtl = False
     has_manga = False
     base_url = ["https://novel-bin.com/", "https://novelbin.me"]
-
-    def initialize(self) -> None:
-        self.taskman.init_executor(ratelimit=1)
+    request_rate_limit = 1
+    chapter_list_on_novel_page = True

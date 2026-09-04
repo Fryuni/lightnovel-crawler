@@ -16,7 +16,6 @@ class LitnetCrawler(LegacyCrawler):
 
     def initialize(self):
         self.scraper.origin = "https://booknet.com/"
-        self.init_executor(1)
 
     def search_novel(self, query):
         query = quote_plus(query.lower())
@@ -77,7 +76,7 @@ class LitnetCrawler(LegacyCrawler):
             vol_id = len(self.chapters) // 100 + 1
             volumes.add(vol_id)
 
-            abs_url = self.last_soup_url.replace("/en/book/", "/en/reader/")
+            abs_url = self.last_url.replace("/en/book/", "/en/reader/")
             chap_url = abs_url + ("?c=%s" % a.attrs["value"])
             self.chapters.append(
                 Chapter(
